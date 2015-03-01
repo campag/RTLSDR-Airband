@@ -32,6 +32,7 @@
 #define SLEEP(x) Sleep(x)
 #define THREAD HANDLE
 #define GOTOXY(x, y) { COORD xy; xy.X = x; xy.Y = y; SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), xy); }
+#define NUM_ROWS (12)
 #define scanf scanf_s
 #define sscanf sscanf_s
 #define fscanf fscanf_s
@@ -43,11 +44,12 @@
 #define SLEEP(x) usleep(x * 1000)
 #define THREAD pthread_t
 #define GOTOXY(x, y) printf("%c[%d;%df",0x1B,y,x)
+#define NUM_ROWS (36) //reduce if using more than one dongle, say 12
 #include <unistd.h>
 #include <pthread.h>
 #include <algorithm>
 #include <csignal>
-#endif  
+#endif
 
 #include <cstring>
 #include <cstdio>
@@ -86,13 +88,13 @@
 #define FFT_BATCH 1
 #define CHANNELS 8
 #else
-#define BUF_SIZE 2560000
+#define BUF_SIZE 5120000 //16777216 //2560000
 #define SOURCE_RATE 2560000
 #define WAVE_RATE 8000
 #define WAVE_BATCH 1000
 #define WAVE_LEN 2048
-#define MP3_RATE 8000
-#define MAX_SHOUT_QUEUELEN 32768
+#define MP3_RATE 16000 //8000
+#define MAX_SHOUT_QUEUELEN 65536 //32768
 #define AGC_EXTRA 48
 #define FFT_SIZE 512
 #define FFT_SIZE_LOG 9
@@ -212,8 +214,8 @@ void* rtlsdr_exec(void* params) {
     rtlsdr_reset_buffer(dev->rtlsdr);
     printf("Device %d started.\n", dev->device);
     device_opened++;
-    r = rtlsdr_read_async(dev->rtlsdr, rtlsdr_callback, params, 20, 320000);
-    return 0;
+    r = rtlsdr_read_async(dev->rtlsdr, rtlsdr_callback, params, 20, 625*512); //must be a multiple of 512
+    return NULL;
 }
 
 void mp3_setup(channel_t* channel) {
@@ -267,16 +269,16 @@ void mp3_setup(channel_t* channel) {
         ret = SHOUTERR_CONNECTED;
 
     if (ret == SHOUTERR_BUSY)
-        if(quiet) printf("Connecting to %s:%d/%s...\n", 
+        if(quiet) printf("Connecting to %s:%d/%s...\n",
             channel->hostname, channel->port, channel->mountpoint);
 
     while (ret == SHOUTERR_BUSY) {
         usleep(10000);
         ret = shout_get_connected(shouttemp);
     }
- 
+
     if (ret == SHOUTERR_CONNECTED) {
-        if(quiet) printf("Connected to %s:%d/%s\n", 
+        if(quiet) printf("Connected to %s:%d/%s\n",
             channel->hostname, channel->port, channel->mountpoint);
         channel->lame = lame_init();
         lame_set_in_samplerate(channel->lame, WAVE_RATE);
@@ -363,6 +365,7 @@ void* mp3_check(void* params) {
     }
 }
 
+
 void demodulate() {
 
     // initialize fft engine
@@ -374,6 +377,13 @@ void demodulate() {
     fftout = fftwf_alloc_complex(FFT_SIZE);
     fft = fftwf_plan_dft_1d(FFT_SIZE, fftin, fftout, FFTW_FORWARD, FFTW_MEASURE);
 #else
+
+#ifdef RPI2
+//campag revert asm code to old c
+	float window2[FFT_SIZE][256];
+//campag revert asm code to old c
+#endif
+
     int mb = mbox_open();
     struct GPU_FFT *fft;
     int ret = gpu_fft_prepare(mb, FFT_SIZE_LOG, GPU_FFT_FWD, FFT_BATCH, &fft);
@@ -409,6 +419,15 @@ void demodulate() {
             - (a5 * cos((10.0 * M_PI * i) / (FFT_SIZE - 1)))
             + (a6 * cos((12.0 * M_PI * i) / (FFT_SIZE - 1)));
         window[i * 2] = window[i * 2 + 1] = (float)x;
+
+#ifdef RPI2
+//campag revert asm code to old c
+		for (int j = 0; j < 256; j++) {
+			window2[i][j] = j*x;
+		}
+//campag revert asm code to old c
+#endif
+
     }
 
     // speed2 = number of bytes per wave sample (x 2 for I and Q)
@@ -483,9 +502,99 @@ void demodulate() {
             }
         }
 #else
+//campag revert asm code to old c
+#ifndef RPI2
         for (int i = 0; i < FFT_BATCH; i++) {
             samplefft(fft->in + i * fft->step, dev->buffer + dev->bufs + i * speed2, window, levels);
-        }
+            }
+#else
+		struct GPU_FFT_COMPLEX* base;
+		unsigned char* bs2;
+		float* w0;
+		for (int i = 0; i < FFT_SIZE;) {
+			base = fft->in + i;
+			bs2 = dev->buffer + dev->bufs + i * 2;
+			w0 = window2[i];
+			for (int j = 0; j < FFT_BATCH; j++) {
+				unsigned char t0 = bs2[0];
+				unsigned char t1 = bs2[1];
+				unsigned char t2 = bs2[2];
+				unsigned char t3 = bs2[3];
+				__builtin_prefetch(bs2 + speed2);
+				__builtin_prefetch(bs2 + speed2 + 8);
+				float s0 = w0[t0];
+				float s1 = w0[t1];
+				w0 += 256;
+				t0 = bs2[4];
+				t1 = bs2[5];
+				float s2 = w0[t2];
+				float s3 = w0[t3];
+				w0 += 256;
+
+				t2 = bs2[6];
+				t3 = bs2[7];
+				base[0].re = s0;
+				base[0].im = s1;
+				s0 = w0[t0];
+				s1 = w0[t1];
+				w0 += 256;
+
+				t0 = bs2[8];
+				t1 = bs2[9];
+				base[1].re = s2;
+				base[1].im = s3;
+				s2 = w0[t2];
+				s3 = w0[t3];
+				w0 += 256;
+
+				t2 = bs2[10];
+				t3 = bs2[11];
+				base[2].re = s0;
+				base[2].im = s1;
+				s0 = w0[t0];
+				s1 = w0[t1];
+				w0 += 256;
+
+				t0 = bs2[12];
+				t1 = bs2[13];
+				base[3].re = s2;
+				base[3].im = s3;
+				s2 = w0[t2];
+				s3 = w0[t3];
+				w0 += 256;
+
+				t2 = bs2[14];
+				t3 = bs2[15];
+				base[4].re = s0;
+				base[4].im = s1;
+				s0 = w0[t0];
+				s1 = w0[t1];
+				w0 += 256;
+
+				base[5].re = s2;
+				base[5].im = s3;
+				s2 = w0[t2];
+				s3 = w0[t3];
+				base[6].re = s0;
+				base[6].im = s1;
+				w0 -= 1792;
+				base[7].re = s2;
+				base[7].im = s3;
+				base += fft->step;
+				bs2 += speed2;
+			}
+			if (i < 192) {
+				i += 320;
+			} else if (i >= 320) {
+				i -= 312;
+			} else if (i == 312) {
+				break;
+			} else {
+				i += 8;
+			}
+		}
+//campag revert asm code to old c
+#endif
 
         // allow mp3 encoding thread to run while waiting for GPU to finish
         pthread_cond_signal(&mp3_cond);
@@ -495,10 +604,10 @@ void demodulate() {
         fftwave(dev->channels[0].wavein + dev->waveend, fft->out, sizes, dev->bins);
 #endif
         dev->waveend += FFT_BATCH;
-        
+
         if (dev->waveend >= WAVE_BATCH + AGC_EXTRA) {
             if (!quiet) {
-                GOTOXY(0, device_num * 17 + dev->row + 3);
+                GOTOXY(0, device_num * (NUM_ROWS+5) + dev->row + 3);
             }
             for (int i = 0; i < dev->channel_count; i++) {
                 channel_t* channel = dev->channels + i;
@@ -579,7 +688,7 @@ void demodulate() {
             dev->waveavail = 1;
             dev->waveend -= WAVE_BATCH;
             dev->row++;
-            if (dev->row == 12) {
+            if (dev->row == NUM_ROWS) {
                 dev->row = 0;
             }
         }
@@ -714,12 +823,12 @@ int main(int argc, char* argv[]) {
         GOTOXY(0, 0);
         printf("                                                                               ");
         for (int i = 0; i < device_count; i++) {
-            GOTOXY(0, i * 17 + 1);
+            GOTOXY(0, i * (NUM_ROWS+5) + 1);
             for (int j = 0; j < devices[i].channel_count; j++) {
                 printf(" %7.3f  ", devices[i].channels[j].frequency / 1000000.0);
             }
             if (i != device_count - 1) {
-                GOTOXY(0, i * 17 + 16);
+                GOTOXY(0, i * (NUM_ROWS+5) + NUM_ROWS+4);
                 printf("-------------------------------------------------------------------------------");
             }
         }
