@@ -104,8 +104,8 @@ Building
  * sudo apt-get install libmp3lame-dev libvorbis-dev libshout-dev libfftw3-dev
  * sudo rpi-update && sudo reboot
  * cd into the project folder (where makefile is located)
- * No longer requires, sources included: cp -r /opt/vc/src/hello_pi/hello_fft .
- * edit make file and comment/uncomment as required for Pi version target.
+ * ~~cp -r /opt/vc/src/hello_pi/hello_fft .~~ - no longer required, sources are included.
+ * edit make file and comment/uncomment as required for your Pi version / build target.
  * make
  * sudo mknod char_dev c 100 0
  * You need to run the program with sudo
