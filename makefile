@@ -13,20 +13,19 @@ F += -lrt -lm -lvorbisenc -lmp3lame -lshout -lpthread -lrtlsdr -o $(B)
 #F += -O3 -mtune=arm1176jzf-s
 
 #RPI2 g++ (v4.6 as std with Raspbian Wheezy)
-CC = g++
-T = -mfpu=neon-vfpv4 -march=armv7-a
-F += -O3 -DRPI2
+#CC = g++
+#T = -mfpu=neon-vfpv4 -march=armv7-a
+#F += -O3 -DRPI2
 
 #RP2 g++-4.8
-#CC = g++-4.8
-#T = -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4
-#F += -O3 -DRPI2 -Ofast -ftree-vectorize
+CC = g++-4.8
+T = -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4
+F += -O3 -DRPI2 -Ofast -ftree-vectorize
+#F += -O3 -Ofast -ftree-vectorize
 ## -ftreevectorizer-verbose=1
 
 $(B):
-	as -o rtl_airband_asm.o $(S) $(T)
 	$(CC) $(F) $(T) $(C) $(S)
 
 clean:
 	rm -f $(B)
-	rm -f rtl_airband_asm.o

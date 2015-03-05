@@ -72,7 +72,7 @@ Building
  
 ##### pthreads
  * Download from ftp://sourceware.org/pub/pthreads-win32/
- * Extract Pre-built.2 to the same folder where libogg and libvorbis are located
+: * Extract Pre-built.2 to the same folder where libogg and libvorbis are located
  * Copy Pre-built.2/lib/x86/pthreadVCE2.lib to win32/lib
  * Copy Pre-built.2/dll/x86/pthreadVCE2.dll to root folder
 
@@ -104,9 +104,10 @@ Building
  * sudo apt-get install libmp3lame-dev libvorbis-dev libshout-dev libfftw3-dev
  * sudo rpi-update && sudo reboot
  * cd into the project folder (where makefile is located)
- * cp -r /opt/vc/src/hello_pi/hello_fft .
- * sudo mknod char_dev c 100 0
+ * No longer requires, sources included: cp -r /opt/vc/src/hello_pi/hello_fft .
+ * edit make file and comment/uncomment as required for Pi version target.
  * make
+ * sudo mknod char_dev c 100 0
  * You need to run the program with sudo
 
 Configuring
